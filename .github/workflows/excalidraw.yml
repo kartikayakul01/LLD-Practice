@@ -17,14 +17,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Convert Excalidraw to SVG
+        uses: excalidraw/excalidraw-to-svg-action@v1
         with:
-          node-version: 20
-
-      - name: Generate SVG
-        run: |
-          npx --yes excalidraw-to-svg LLD.excalidraw LLD.svg
+          files: "LLD.excalidraw"
 
       - name: Verify SVG
         run: |
