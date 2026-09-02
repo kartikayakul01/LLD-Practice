@@ -1,0 +1,6 @@
+# IntelliJ IDEA internal files
+.idea/
+*.iml
+
+# Compiled Java class files
+*.class
