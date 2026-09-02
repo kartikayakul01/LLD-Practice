@@ -20,54 +20,36 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Generate SVG
+      - name: Install temporary dependencies
         run: |
-          npm install jsdom @excalidraw/utils
-          node -e '
-          const fs = require("fs");
-          const { JSDOM } = require("jsdom");
+          npm install @excalidraw/utils excalidraw-to-svg
 
-          // Setup headless DOM window context for Excalidraw exporter
-          const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
-          global.window = dom.window;
-          global.document = dom.window.document;
-          global.navigator = dom.window.navigator;
-
-          const { exportToSvg } = require("@excalidraw/utils");
-
-          (async () => {
-            const fileContent = fs.readFileSync("LLD.excalidraw", "utf8");
-            const data = JSON.parse(fileContent);
-            
-            const svgElement = await exportToSvg({
-              elements: data.elements,
-              appState: data.appState || {},
-              files: data.files || {}
-            });
-
-            fs.writeFileSync("LLD.svg", svgElement.outerHTML);
-            console.log("Successfully generated LLD.svg");
-          })();
-          '
-
-      - name: Verify SVG
+      - name: Generate SVGs for all Excalidraw files
         run: |
-          test -f LLD.svg
-          echo "SVG generated successfully:"
-          ls -lh LLD.svg
+          # Find all .excalidraw files recursively and convert each to .svg
+          find . -type f -name "*.excalidraw" | while read -r file; do
+            output_file="${file%.excalidraw}.svg"
+            echo "Converting $file -> $output_file"
+            npx excalidraw-to-svg "$file" "$output_file"
+          done
 
-      - name: Commit generated SVG
+      - name: Verify generated SVGs
+        run: |
+          echo "All generated SVGs in repository:"
+          find . -type f -name "*.svg"
+
+      - name: Commit generated SVGs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add LLD.svg
+          git add "*.svg"
 
           if git diff --cached --quiet; then
-            echo "No changes in SVG"
+            echo "No SVG changes to commit"
           else
-            git commit -m "chore: update LLD SVG [skip ci]"
+            git commit -m "chore: update Excalidraw SVGs [skip ci]"
             git push
           fi
