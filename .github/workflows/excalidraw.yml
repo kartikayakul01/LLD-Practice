@@ -22,12 +22,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: List Repository Files (Before)
-        run: |
-          echo "=== Directory Listing Before Processing ==="
-          ls -la
-          find . -name "*.excalidraw"
-
       - name: Generate SVGs via Headless Chrome
         run: |
           cd /tmp
@@ -59,22 +53,15 @@ jobs:
           (async () => {
             try {
               const files = findExcalidrawFiles(".");
-              console.log(`Found ${files.length} .excalidraw file(s):`, files);
+              console.log(`Found ${files.length} .excalidraw file(s).`);
 
-              if (files.length === 0) {
-                console.log("No .excalidraw files found to process.");
-                return;
-              }
+              if (files.length === 0) return;
 
               const browser = await puppeteer.launch({
                 headless: true,
                 args: ["--no-sandbox", "--disable-setuid-sandbox"]
               });
               const page = await browser.newPage();
-
-              // Listen to browser console logs for errors
-              page.on("console", msg => console.log("PAGE LOG:", msg.text()));
-              page.on("pageerror", err => console.log("PAGE ERROR:", err.toString()));
 
               await page.setContent(`
                 <!DOCTYPE html>
@@ -93,39 +80,44 @@ jobs:
 
               for (const file of files) {
                 const svgPath = file.replace(/\.excalidraw$/, ".svg");
-                console.log(`Converting: ${file} -> ${svgPath}`);
+                console.log(`Exporting Full Dark Mode SVG (3x): ${file} -> ${svgPath}`);
 
                 const jsonContent = JSON.parse(fs.readFileSync(file, "utf8"));
 
-                const svgString = await page.evaluate(async (data) => {
+                // Filter out deleted elements to ensure full-bound canvas calculation
+                const validElements = (jsonContent.elements || []).filter(el => !el.isDeleted);
+
+                const svgString = await page.evaluate(async (data, elements) => {
                   const svgElement = await window.ExcalidrawUtils.exportToSvg({
-                    elements: data.elements,
+                    elements: elements,
                     appState: {
                       ...data.appState,
-                      exportWithBackground: true
+                      theme: "dark",                  // 1. Dark Mode ON
+                      exportWithBackground: true,    // 2. Background ON
+                      exportScale: 3,                // 3. 3x Scale
+                      exportPadding: 30,             // 4. Captures full canvas boundary
+                      viewBackgroundColor: "#121212" // Deep dark canvas color
                     },
                     files: data.files || {}
                   });
                   return svgElement.outerHTML;
-                }, jsonContent);
+                }, jsonContent, validElements);
 
                 fs.writeFileSync(svgPath, svgString);
-                console.log(`Successfully wrote ${svgPath} (${fs.statSync(svgPath).size} bytes)`);
+                console.log(`Wrote ${svgPath} successfully (${fs.statSync(svgPath).size} bytes)`);
               }
 
               await browser.close();
             } catch (err) {
-              console.error("Script Error:", err);
+              console.error("Export Failed:", err);
               process.exit(1);
             }
           })();
           '
 
-      - name: List Repository Files (After)
+      - name: List Repository Files
         run: |
-          echo "=== Directory Listing After Processing ==="
-          ls -la
-          echo "=== SVG Files Found ==="
+          echo "=== Directory SVGs ==="
           find . -name "*.svg"
 
       - name: Commit generated SVGs
@@ -133,15 +125,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Stage all generated SVG files explicitly
           git add -A "*.svg"
-
-          echo "=== Git Status ==="
-          git status
 
           if git diff --cached --quiet; then
             echo "No SVG changes to commit."
           else
-            git commit -m "chore: export full length Excalidraw SVGs [skip ci]"
+            git commit -m "chore: export 3x scale darkmode Excalidraw SVGs [skip ci]"
             git push
           fi
