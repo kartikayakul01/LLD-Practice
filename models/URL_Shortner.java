@@ -3,7 +3,7 @@ import java.util.*;
 public class URL_Shortner{
     private Map<String,String> Url_Collection = new HashMap<>();
     private final String INTIALPART = "https://ourwebsite/";
-    private static Integer ournumber= 1000;
+    private static Integer ournumber= 999;
 
     private Boolean URLValidator(String url){
         if(!url.startsWith("https://")){
@@ -13,13 +13,26 @@ public class URL_Shortner{
     }
 
     private String ShortnerUrl(String url){
-        return INTIALPART;
+        ournumber++;
+        return INTIALPART+String.valueOf(ournumber);
     }
 
     public String createUrl(String Orignalurl){
         if(!URLValidator(Orignalurl)){
             throw new IllegalArgumentException("Url is not valid");
         }
-        return ShortnerUrl(Orignalurl);
+        String shorturl;
+        do{
+            shorturl = ShortnerUrl(Orignalurl);
+        }while(Url_Collection.containsKey(shorturl));
+        Url_Collection.put(shorturl,Orignalurl);
+        return shorturl;
+    }
+    public String getUrl(String url){
+        if(Url_Collection.containsKey(url)){
+            return Url_Collection.get(url);
+        }else{
+            return "DO NOT EXITS";
+        }
     }
 }
