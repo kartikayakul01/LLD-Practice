@@ -3,7 +3,7 @@ name: Generate Excalidraw SVG
 on:
   push:
     paths:
-      - "**"
+      - "**/*.excalidraw"
   workflow_dispatch:
 
 jobs:
@@ -22,9 +22,14 @@ jobs:
         with:
           node-version: 22
 
+      - name: List Repository Files (Before)
+        run: |
+          echo "=== Directory Listing Before Processing ==="
+          ls -la
+          find . -name "*.excalidraw"
+
       - name: Generate SVGs via Headless Chrome
         run: |
-          # Install puppeteer outside your project directory so no package.json/node_modules are created in your repo
           cd /tmp
           npm install puppeteer
           cd $GITHUB_WORKSPACE
@@ -52,69 +57,90 @@ jobs:
           }
 
           (async () => {
-            const browser = await puppeteer.launch({
-              headless: true,
-              args: ["--no-sandbox", "--disable-setuid-sandbox"]
-            });
-            const page = await browser.newPage();
+            try {
+              const files = findExcalidrawFiles(".");
+              console.log(`Found ${files.length} .excalidraw file(s):`, files);
 
-            // Load official Excalidraw utils bundled in the browser page context
-            await page.setContent(`
-              <!DOCTYPE html>
-              <html>
-                <head>
-                  <script type="module">
-                    import * as ExcalidrawUtils from "https://esm.sh/@excalidraw/utils";
-                    window.ExcalidrawUtils = ExcalidrawUtils;
-                  </script>
-                </head>
-                <body></body>
-              </html>
-            `);
+              if (files.length === 0) {
+                console.log("No .excalidraw files found to process.");
+                return;
+              }
 
-            // Wait for Excalidraw bundle to load in browser window context
-            await page.waitForFunction(() => window.ExcalidrawUtils && window.ExcalidrawUtils.exportToSvg);
+              const browser = await puppeteer.launch({
+                headless: true,
+                args: ["--no-sandbox", "--disable-setuid-sandbox"]
+              });
+              const page = await browser.newPage();
 
-            const files = findExcalidrawFiles(".");
-            console.log(`Found ${files.length} .excalidraw file(s).`);
+              // Listen to browser console logs for errors
+              page.on("console", msg => console.log("PAGE LOG:", msg.text()));
+              page.on("pageerror", err => console.log("PAGE ERROR:", err.toString()));
 
-            for (const file of files) {
-              const svgPath = file.replace(/\.excalidraw$/, ".svg");
-              console.log(`Exporting full SVG: ${file} -> ${svgPath}`);
+              await page.setContent(`
+                <!DOCTYPE html>
+                <html>
+                  <head>
+                    <script type="module">
+                      import * as ExcalidrawUtils from "https://esm.sh/@excalidraw/utils";
+                      window.ExcalidrawUtils = ExcalidrawUtils;
+                    </script>
+                  </head>
+                  <body></body>
+                </html>
+              `);
 
-              const jsonContent = JSON.parse(fs.readFileSync(file, "utf8"));
+              await page.waitForFunction(() => window.ExcalidrawUtils && window.ExcalidrawUtils.exportToSvg, { timeout: 30000 });
 
-              // Execute full export inside real browser window context
-              const svgString = await page.evaluate(async (data) => {
-                const svgElement = await window.ExcalidrawUtils.exportToSvg({
-                  elements: data.elements,
-                  appState: {
-                    ...data.appState,
-                    exportWithBackground: true
-                  },
-                  files: data.files || {}
-                });
-                return svgElement.outerHTML;
-              }, jsonContent);
+              for (const file of files) {
+                const svgPath = file.replace(/\.excalidraw$/, ".svg");
+                console.log(`Converting: ${file} -> ${svgPath}`);
 
-              fs.writeFileSync(svgPath, svgString);
+                const jsonContent = JSON.parse(fs.readFileSync(file, "utf8"));
+
+                const svgString = await page.evaluate(async (data) => {
+                  const svgElement = await window.ExcalidrawUtils.exportToSvg({
+                    elements: data.elements,
+                    appState: {
+                      ...data.appState,
+                      exportWithBackground: true
+                    },
+                    files: data.files || {}
+                  });
+                  return svgElement.outerHTML;
+                }, jsonContent);
+
+                fs.writeFileSync(svgPath, svgString);
+                console.log(`Successfully wrote ${svgPath} (${fs.statSync(svgPath).size} bytes)`);
+              }
+
+              await browser.close();
+            } catch (err) {
+              console.error("Script Error:", err);
+              process.exit(1);
             }
-
-            await browser.close();
-            console.log("All SVGs rendered successfully.");
           })();
           '
+
+      - name: List Repository Files (After)
+        run: |
+          echo "=== Directory Listing After Processing ==="
+          ls -la
+          echo "=== SVG Files Found ==="
+          find . -name "*.svg"
 
       - name: Commit generated SVGs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Only stage the .svg outputs
-          git add "*.svg" "**/*.svg" 2>/dev/null || true
+          # Stage all generated SVG files explicitly
+          git add -A "*.svg"
+
+          echo "=== Git Status ==="
+          git status
 
           if git diff --cached --quiet; then
-            echo "No changes in SVGs"
+            echo "No SVG changes to commit."
           else
             git commit -m "chore: export full length Excalidraw SVGs [skip ci]"
             git push
