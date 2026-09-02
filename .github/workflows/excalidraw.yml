@@ -3,7 +3,7 @@ name: Generate Excalidraw SVG
 on:
   push:
     paths:
-      - "**/*.excalidraw"
+      - "**"
   workflow_dispatch:
 
 jobs:
