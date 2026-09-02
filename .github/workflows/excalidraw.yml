@@ -94,7 +94,8 @@ jobs:
                       ...data.appState,
                       selectedElementIds: {},
                       theme: "dark",                  // 1. Dark Mode ON
-                      exportWithBackground: true,    // 2. Background ON
+                      exportWithDarkMode: true,      // <-- this is what actually inverts element colors
+                      exportBackground: true,  // 2. Background ON
                       exportScale: 3,                // 3. 3x Scale
                       exportPadding: 30,             // 4. Captures full canvas boundary
                       viewBackgroundColor: "#1e1e1e" // Deep dark canvas color
