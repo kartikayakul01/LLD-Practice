@@ -22,59 +22,86 @@ jobs:
         with:
           node-version: 22
 
-      - name: Convert Excalidraw files to SVG
+      - name: Generate SVGs via Headless Chrome
         run: |
-          # Install temporary dependencies outside the workspace
+          # Install puppeteer outside your project directory so no package.json/node_modules are created in your repo
           cd /tmp
-          npm install @excalidraw/utils jsdom
+          npm install puppeteer
           cd $GITHUB_WORKSPACE
 
-          # Execute inline Node renderer
           NODE_PATH=/tmp/node_modules node -e '
           const fs = require("fs");
           const path = require("path");
-          const { JSDOM } = require("jsdom");
+          const puppeteer = require("puppeteer");
 
-          // Initialize DOM environment for Excalidraw
-          const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
-          global.window = dom.window;
-          global.document = dom.window.document;
-          global.navigator = dom.window.navigator;
-
-          const { exportToSvg } = require("@excalidraw/utils");
-
-          function getFiles(dir, extension) {
+          function findExcalidrawFiles(dir) {
             let results = [];
             const list = fs.readdirSync(dir);
             list.forEach(file => {
-              file = path.join(dir, file);
-              const stat = fs.statSync(file);
+              const fullPath = path.join(dir, file);
+              const stat = fs.statSync(fullPath);
               if (stat && stat.isDirectory()) {
-                if (!file.includes("node_modules") && !file.includes(".git")) {
-                  results = results.concat(getFiles(file, extension));
+                if (!file.startsWith(".") && file !== "node_modules") {
+                  results = results.concat(findExcalidrawFiles(fullPath));
                 }
-              } else if (file.endsWith(extension)) {
-                results.push(file);
+              } else if (file.endsWith(".excalidraw")) {
+                results.push(fullPath);
               }
             });
             return results;
           }
 
           (async () => {
-            const files = getFiles(".", ".excalidraw");
+            const browser = await puppeteer.launch({
+              headless: true,
+              args: ["--no-sandbox", "--disable-setuid-sandbox"]
+            });
+            const page = await browser.newPage();
+
+            // Load official Excalidraw utils bundled in the browser page context
+            await page.setContent(`
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <script type="module">
+                    import * as ExcalidrawUtils from "https://esm.sh/@excalidraw/utils";
+                    window.ExcalidrawUtils = ExcalidrawUtils;
+                  </script>
+                </head>
+                <body></body>
+              </html>
+            `);
+
+            // Wait for Excalidraw bundle to load in browser window context
+            await page.waitForFunction(() => window.ExcalidrawUtils && window.ExcalidrawUtils.exportToSvg);
+
+            const files = findExcalidrawFiles(".");
+            console.log(`Found ${files.length} .excalidraw file(s).`);
+
             for (const file of files) {
               const svgPath = file.replace(/\.excalidraw$/, ".svg");
-              console.log(`Processing: ${file} -> ${svgPath}`);
-              
-              const content = JSON.parse(fs.readFileSync(file, "utf8"));
-              const svg = await exportToSvg({
-                elements: content.elements,
-                appState: content.appState || {},
-                files: content.files || {}
-              });
-              
-              fs.writeFileSync(svgPath, svg.outerHTML);
+              console.log(`Exporting full SVG: ${file} -> ${svgPath}`);
+
+              const jsonContent = JSON.parse(fs.readFileSync(file, "utf8"));
+
+              // Execute full export inside real browser window context
+              const svgString = await page.evaluate(async (data) => {
+                const svgElement = await window.ExcalidrawUtils.exportToSvg({
+                  elements: data.elements,
+                  appState: {
+                    ...data.appState,
+                    exportWithBackground: true
+                  },
+                  files: data.files || {}
+                });
+                return svgElement.outerHTML;
+              }, jsonContent);
+
+              fs.writeFileSync(svgPath, svgString);
             }
+
+            await browser.close();
+            console.log("All SVGs rendered successfully.");
           })();
           '
 
@@ -83,12 +110,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Only track actual SVG outputs corresponding to excalidraw files
-          git add *.svg **/*.svg 2>/dev/null || true
+          # Only stage the .svg outputs
+          git add "*.svg" "**/*.svg" 2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "No SVG changes detected."
+            echo "No changes in SVGs"
           else
-            git commit -m "chore: auto-generate Excalidraw SVGs [skip ci]"
+            git commit -m "chore: export full length Excalidraw SVGs [skip ci]"
             git push
           fi
