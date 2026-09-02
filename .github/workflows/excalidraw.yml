@@ -92,11 +92,12 @@ jobs:
                     elements: elements,
                     appState: {
                       ...data.appState,
+                      selectedElementIds: {},
                       theme: "dark",                  // 1. Dark Mode ON
                       exportWithBackground: true,    // 2. Background ON
                       exportScale: 3,                // 3. 3x Scale
                       exportPadding: 30,             // 4. Captures full canvas boundary
-                      viewBackgroundColor: "#121212" // Deep dark canvas color
+                      viewBackgroundColor: "#1e1e1e" // Deep dark canvas color
                     },
                     files: data.files || {}
                   });
