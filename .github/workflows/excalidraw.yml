@@ -4,84 +4,32 @@ on:
   push:
     paths:
       - "**/*.excalidraw"
-      - ".github/workflows/excalidraw.yml"
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   export-svg:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install Excalidraw utilities
-        run: |
-          npm init -y
-          npm install @excalidraw/utils jsdom
-
-      - name: Create SVG exporter
-        run: |
-          cat > export-svg.mjs <<'EOF'
-          import fs from "fs";
-          import { JSDOM } from "jsdom";
-
-          const dom = new JSDOM(
-            "<!DOCTYPE html><html><body></body></html>",
-            {
-              url: "http://localhost",
-              pretendToBeVisual: true
-            }
-          );
-
-          globalThis.window = dom.window;
-          globalThis.document = dom.window.document;
-          globalThis.navigator = dom.window.navigator;
-          globalThis.DOMParser = dom.window.DOMParser;
-          globalThis.XMLSerializer = dom.window.XMLSerializer;
-          globalThis.devicePixelRatio = 1;
-
-          const data = JSON.parse(
-            fs.readFileSync("LLD.excalidraw", "utf8")
-          );
-
-          const { exportToSvg } = await import("@excalidraw/utils");
-
-          const svg = await exportToSvg({
-            elements: data.elements,
-            appState: {
-              ...data.appState,
-              exportBackground: true
-            },
-            files: data.files || {}
-          });
-
-          fs.writeFileSync(
-            "LLD.svg",
-            svg.outerHTML,
-            "utf8"
-          );
-
-          console.log("LLD.svg generated successfully");
-          EOF
+      - name: Install Excalidraw exporter
+        run: npm install -g excalidraw_export
 
       - name: Generate SVG
-        run: node export-svg.mjs
+        run: |
+          excalidraw_export LLD.excalidraw
 
       - name: Commit generated SVG
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add LLD.svg
+          git add LLD.excalidraw.svg
 
           if git diff --cached --quiet; then
             echo "No SVG changes"
