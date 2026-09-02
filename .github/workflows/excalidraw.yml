@@ -50,6 +50,16 @@ jobs:
             return results;
           }
 
+          // Default Excalidraw light-mode stroke/text color -> light color for dark canvas
+          const LIGHT_ON_DARK = "#e9ecef";
+          function recolorForDark(el) {
+            const out = { ...el };
+            if (out.strokeColor === "#1e1e1e" || out.strokeColor === "#000000") {
+              out.strokeColor = LIGHT_ON_DARK;
+            }
+            return out;
+          }
+
           (async () => {
             try {
               const files = findExcalidrawFiles(".");
@@ -85,20 +95,20 @@ jobs:
                 const jsonContent = JSON.parse(fs.readFileSync(file, "utf8"));
 
                 // Filter out deleted elements to ensure full-bound canvas calculation
-                const validElements = (jsonContent.elements || []).filter(el => !el.isDeleted);
+                const validElements = (jsonContent.elements || [])
+                  .filter(el => !el.isDeleted)
+                  .map(recolorForDark); // bake in light colors for dark background
 
                 const svgString = await page.evaluate(async (data, elements) => {
                   const svgElement = await window.ExcalidrawUtils.exportToSvg({
                     elements: elements,
                     appState: {
                       ...data.appState,
-                      selectedElementIds: {},
-                      theme: "dark",                  // 1. Dark Mode ON
-                      exportWithDarkMode: true,      // <-- this is what actually inverts element colors
-                      exportBackground: true,  // 2. Background ON
-                      exportScale: 3,                // 3. 3x Scale
-                      exportPadding: 30,             // 4. Captures full canvas boundary
-                      viewBackgroundColor: "#1e1e1e" // Deep dark canvas color
+                      selectedElementIds: {},        // ignore any saved selection, export full canvas
+                      exportBackground: true,        // correct key (was exportWithBackground)
+                      exportScale: 3,                 // 3x scale
+                      exportPadding: 30,              // full canvas boundary
+                      viewBackgroundColor: "#1e1e1e" // deep dark canvas color
                     },
                     files: data.files || {}
                   });
