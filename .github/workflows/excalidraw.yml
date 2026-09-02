@@ -22,34 +22,73 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install temporary dependencies
+      - name: Convert Excalidraw files to SVG
         run: |
-          npm install @excalidraw/utils excalidraw-to-svg
+          # Install temporary dependencies outside the workspace
+          cd /tmp
+          npm install @excalidraw/utils jsdom
+          cd $GITHUB_WORKSPACE
 
-      - name: Generate SVGs for all Excalidraw files
-        run: |
-          # Find all .excalidraw files recursively and convert each to .svg
-          find . -type f -name "*.excalidraw" | while read -r file; do
-            output_file="${file%.excalidraw}.svg"
-            echo "Converting $file -> $output_file"
-            npx excalidraw-to-svg "$file" "$output_file"
-          done
+          # Execute inline Node renderer
+          NODE_PATH=/tmp/node_modules node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const { JSDOM } = require("jsdom");
 
-      - name: Verify generated SVGs
-        run: |
-          echo "All generated SVGs in repository:"
-          find . -type f -name "*.svg"
+          // Initialize DOM environment for Excalidraw
+          const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+          global.window = dom.window;
+          global.document = dom.window.document;
+          global.navigator = dom.window.navigator;
+
+          const { exportToSvg } = require("@excalidraw/utils");
+
+          function getFiles(dir, extension) {
+            let results = [];
+            const list = fs.readdirSync(dir);
+            list.forEach(file => {
+              file = path.join(dir, file);
+              const stat = fs.statSync(file);
+              if (stat && stat.isDirectory()) {
+                if (!file.includes("node_modules") && !file.includes(".git")) {
+                  results = results.concat(getFiles(file, extension));
+                }
+              } else if (file.endsWith(extension)) {
+                results.push(file);
+              }
+            });
+            return results;
+          }
+
+          (async () => {
+            const files = getFiles(".", ".excalidraw");
+            for (const file of files) {
+              const svgPath = file.replace(/\.excalidraw$/, ".svg");
+              console.log(`Processing: ${file} -> ${svgPath}`);
+              
+              const content = JSON.parse(fs.readFileSync(file, "utf8"));
+              const svg = await exportToSvg({
+                elements: content.elements,
+                appState: content.appState || {},
+                files: content.files || {}
+              });
+              
+              fs.writeFileSync(svgPath, svg.outerHTML);
+            }
+          })();
+          '
 
       - name: Commit generated SVGs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add "*.svg"
+          # Only track actual SVG outputs corresponding to excalidraw files
+          git add *.svg **/*.svg 2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "No SVG changes to commit"
+            echo "No SVG changes detected."
           else
-            git commit -m "chore: update Excalidraw SVGs [skip ci]"
+            git commit -m "chore: auto-generate Excalidraw SVGs [skip ci]"
             git push
           fi
