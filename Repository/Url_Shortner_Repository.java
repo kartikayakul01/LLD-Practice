@@ -20,11 +20,18 @@ public class Url_Shortner_Repository{
             System.out.println("---- slave updated---");
 
         });
+        return true;
     }
-    public String get_url(String shorturl){
+    public String get_url(String shorturl) throws Exception {
         if(!URL_Slave.containsKey(shorturl)){
             throw new Exception("This url do not exists");
         }
         return URL_Slave.get(shorturl);
+    }
+    public Boolean url_available(String shorturl){
+        if(!URL_Master.containsKey(shorturl)){
+            return true;
+        }
+        return false;
     }
 }
