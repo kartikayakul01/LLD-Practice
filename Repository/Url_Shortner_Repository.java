@@ -15,10 +15,7 @@ public class Url_Shortner_Repository{
     public Boolean save_url(String ShortURL,String Orignalurl){
         URL_Master.put(ShortURL,Orignalurl);
         CompletableFuture.runAsync(()-> {
-            System.out.println("---- Updating slave---");
             URL_Slave.put(ShortURL,Orignalurl);
-            System.out.println("---- slave updated---");
-
         });
         return true;
     }
