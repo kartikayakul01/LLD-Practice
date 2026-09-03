@@ -1,11 +1,13 @@
 package Strategy;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class Incremental_Strategy implements Url_Shortner_Strategy{
-    private static Integer ournumber= 999;
+    private final AtomicInteger ournumber= new AtomicInteger(999);
 
     private String ShortnerUrl(String url){
-        ournumber++;
-        return INTIALPART+String.valueOf(ournumber);
+        int next = ournumber.incrementAndGet();
+        return INTIALPART+String.valueOf(next);
     }
     @Override
     public String short_url(String OrignalUrl) {

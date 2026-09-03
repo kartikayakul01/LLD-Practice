@@ -12,27 +12,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * CONCURRENCY TEST
- * ----------------
- * Goal: hit ONE shared instance of the service from many threads at the
- * same time and check whether it is actually thread-safe:
- *
- *   1. Short-code uniqueness under contention
- *        Incremental_Strategy uses a plain `static Integer ournumber` with
- *        `ournumber++`. That is a read-modify-write on a non-atomic type -
- *        NOT thread-safe. Under concurrent load two threads can generate
- *        the SAME short code for two DIFFERENT original URLs (lost update).
- *
- *   2. Read-your-write consistency
- *        Url_Shortner_Repository writes to URL_Master synchronously but
- *        replicates to URL_Slave via CompletableFuture.runAsync(...) with
- *        no join/await. get_url() only ever reads from URL_Slave. So a
- *        thread that creates a URL and immediately tries to read it back
- *        can race the async replication and fail even though the URL was
- *        just created successfully.
- *
- * Run:
- *   javac -d out Controller/*.java Repository/*.java Strategy/*.java service/*.java ConcurrencyTest.java
- *   java -cp out ConcurrencyTest [threads] [opsPerThread]
  */
 public class ConcurrencyTest {
 
@@ -51,25 +30,31 @@ public class ConcurrencyTest {
     }
 
     public static void main(String[] args) throws Exception {
-        int threadCount = args.length > 0 ? Integer.parseInt(args[0]) : 50;
-        int opsPerThread = args.length > 1 ? Integer.parseInt(args[1]) : 500;
-        int totalOps = threadCount * opsPerThread;
+        int simulatedUsers = args.length > 0 ? Integer.parseInt(args[0]) : 50;
+        int opsPerUser = args.length > 1 ? Integer.parseInt(args[1]) : 500;
+        int totalOps = simulatedUsers * opsPerUser;
+
+        // --- EDIT 1: Capped Thread Pool Size ---
+        int POOL_SIZE = 100;
 
         System.out.println("============= CONCURRENCY TEST =============");
-        System.out.println("Threads          : " + threadCount);
-        System.out.println("Ops per thread   : " + opsPerThread);
-        System.out.println("Total create ops : " + totalOps);
+        System.out.println("Worker Thread Pool Size: " + POOL_SIZE);
+        System.out.println("Simulated Virtual Users: " + simulatedUsers);
+        System.out.println("Ops per user           : " + opsPerUser);
+        System.out.println("Total create ops       : " + totalOps);
         System.out.println("==============================================\n");
 
-        // ONE shared service instance - this is the whole point.
         Url_Shortner_Repository storage = new Url_Shortner_Repository();
         Incremental_Strategy strategy = new Incremental_Strategy();
         Url_Shortner_Service service = new Url_Shortner_Service(storage, strategy);
         Url_Shortner_Controller controller = new Url_Shortner_Controller(service);
 
-        ExecutorService pool = Executors.newFixedThreadPool(threadCount);
-        CountDownLatch startGate = new CountDownLatch(1); // fire all threads at once
-        CountDownLatch doneGate = new CountDownLatch(threadCount);
+        // --- EDIT 2: Use fixed 100-thread pool ---
+        ExecutorService pool = Executors.newFixedThreadPool(POOL_SIZE);
+        CountDownLatch startGate = new CountDownLatch(1);
+
+        // --- EDIT 3: Wait for all simulated user tasks to complete ---
+        CountDownLatch doneGate = new CountDownLatch(simulatedUsers);
 
         Set<String> allShortUrls = ConcurrentHashMap.newKeySet();
         AtomicInteger totalCreateAttempts = new AtomicInteger(0);
@@ -78,12 +63,12 @@ public class ConcurrencyTest {
         AtomicInteger immediateReadMismatches = new AtomicInteger(0);
         List<String> collisionLog = Collections.synchronizedList(new ArrayList<>());
 
-        for (int t = 0; t < threadCount; t++) {
+        for (int t = 0; t < simulatedUsers; t++) {
             final int threadId = t;
             pool.submit(() -> {
                 try {
-                    startGate.await(); // all threads block here, then release together
-                    for (int i = 0; i < opsPerThread; i++) {
+                    startGate.await();
+                    for (int i = 0; i < opsPerUser; i++) {
                         String original = "https://example.com/thread" + threadId + "/item" + i;
                         totalCreateAttempts.incrementAndGet();
                         try {
@@ -116,8 +101,8 @@ public class ConcurrencyTest {
         }
 
         long start = System.nanoTime();
-        startGate.countDown(); // release all threads at once
-        doneGate.await();      // wait for all threads to finish
+        startGate.countDown();
+        doneGate.await();
         long end = System.nanoTime();
         pool.shutdown();
 
@@ -127,7 +112,7 @@ public class ConcurrencyTest {
         // ---------- Raw numbers ----------
         System.out.println("------------------ Results ------------------");
         System.out.printf("Wall time                 : %.3f s%n", seconds);
-        System.out.printf("Throughput                : %.1f creates/sec (across %d threads)%n", throughput, threadCount);
+        System.out.printf("Throughput                : %.1f creates/sec (across %d thread pool)%n", throughput, POOL_SIZE);
         System.out.println("Total create attempts     : " + totalCreateAttempts.get());
         System.out.println("Create exceptions         : " + createExceptions.get());
         System.out.println("Unique short URLs produced: " + allShortUrls.size());

@@ -20,10 +20,15 @@ public class Url_Shortner_Repository{
         return true;
     }
     public String get_url(String shorturl) throws Exception {
-        if(!URL_Slave.containsKey(shorturl)){
-            throw new Exception("This url do not exists");
+        String fromSlave = URL_Slave.get(shorturl);
+        if (fromSlave != null) {
+            return fromSlave;
         }
-        return URL_Slave.get(shorturl);
+        String fromMaster = URL_Master.get(shorturl);
+        if (fromMaster != null) {
+            return fromMaster;
+        }
+        throw new Exception("This url do not exists");
     }
     public Boolean url_available(String shorturl){
         if(!URL_Master.containsKey(shorturl)){
