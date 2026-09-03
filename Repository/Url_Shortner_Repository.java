@@ -7,7 +7,7 @@ public class Url_Shortner_Repository{
     private Map<String,String> URL_Master;
     private Map<String,String> URL_Slave;
 
-    Url_Shortner_Repository(){
+    public Url_Shortner_Repository(){
         URL_Master = new ConcurrentHashMap<>();
         URL_Slave = new ConcurrentHashMap<>();
     }
